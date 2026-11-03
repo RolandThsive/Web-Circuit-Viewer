@@ -610,7 +610,7 @@
   function drawText(ctx, t, s, model) {
     if (!t.s || t.h * s < 2.5) return;              // too small to read at this zoom: skip it
     ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(-(t.a || 0) * Math.PI / 180);
-    if (!!t.mirror !== !!(model && model.flipped)) ctx.scale(-1, 1);
+    if (t.mirror) ctx.scale(-1, 1);          // the flipped view mirrors the whole drawing, text included, by itself
     if (!FONT.ready) {                              // the font is still on its way: a plain font for now
       var em = t.h / 0.72;
       ctx.font = (t.bold ? "bold " : "") + em + "px Arial, Helvetica, sans-serif";
@@ -698,6 +698,12 @@
       if (!model) return;
       view = fitView(cv.clientWidth || 600, cv.clientHeight || 400);
       lastW = cv.clientWidth; lastH = cv.clientHeight; draw();
+    }
+    // put a point of the drawing (mm) in the middle, at a zoom (px per mm)
+    function center(x, y, sc) {
+      if (!model) return;
+      var w = cv.clientWidth, h = cv.clientHeight; sc = sc || view.s;
+      view = { s: sc, x: w / 2 - sgn() * x * sc, y: h / 2 - y * sc }; draw();
     }
     // zoom to one part (by reference, e.g. "U2") and point it out
     function focus(ref) {
@@ -858,18 +864,21 @@
       lay.appendChild(row);
     }
 
+    var loadNo = 0;
     function load(u) {
+      var my = ++loadNo;                      // a slower, older load must not overwrite a newer one
       pendingKind = /\.kicad_sch(\?|#|$)/i.test(u) ? "sch" : /\.kicad_pcb(\?|#|$)/i.test(u) ? "pcb" : null;
       box.style.background = pendingKind === "sch" ? SCH_COL.bg : PCB_COL.bg;       // the same colour as the drawing, so nothing flashes
       msg.style.display = ""; msg.textContent = "Loading…"; model = null; hover = null; draw();
       return fetch(u).then(function (r) { if (!r.ok) throw new Error("the file answered " + r.status); return r.text(); })
-        .then(function (txt) { return loadText(txt, decodeURIComponent(String(u).split("/").pop().split("?")[0])); })
-        .catch(function (e) { fail(e); });
+        .then(function (txt) { if (my === loadNo) loadText(txt, decodeURIComponent(String(u).split("/").pop().split("?")[0])); })
+        .catch(function (e) { if (my === loadNo) fail(e); });
     }
     function fail(e) { msg.style.display = ""; msg.textContent = "Couldn't open this file (" + e.message + ")."; if (opts.onError) opts.onError(e); }
     // the file's text (from a drop or a file picker); name is only shown in the title block
     function loadText(txt, name) {
       if (dead) return;
+      loadNo++;
       pendingKind = /\.kicad_sch$/i.test(name || "") ? "sch" : /\.kicad_pcb$/i.test(name || "") ? "pcb" : pendingKind;
       try {
         var root = parse(txt);
@@ -910,7 +919,7 @@
     if (ro) ro.observe(box); else window.addEventListener("resize", resized);
     if (url) load(url);
     return {
-      load: load, loadText: loadText, fit: fit, flip: flip, focus: focus, render: render, toBlob: toBlob, info: info, setLayer: setLayer,
+      load: load, loadText: loadText, fit: fit, flip: flip, focus: focus, center: center, render: render, toBlob: toBlob, info: info, setLayer: setLayer,
       zoom: function (f) { zoomAt(cv.clientWidth / 2, cv.clientHeight / 2, f); }, element: box, canvas: cv,
       destroy: function () { dead = true; if (ro) ro.disconnect(); box.remove(); }
     };
@@ -929,5 +938,5 @@
     });
   }
 
-  window.WebCircuitViewer = { mount: mount, parse: parse, preloadFont: preloadFont, version: "1.2.0" };
+  window.WebCircuitViewer = { mount: mount, parse: parse, preloadFont: preloadFont, version: "1.2.1" };
 })();

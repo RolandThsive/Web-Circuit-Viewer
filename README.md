@@ -1,7 +1,8 @@
 # Web-Circuit-Viewer
 
 A very small web viewer for KiCad boards (`.kicad_pcb`) and schematics (`.kicad_sch`), made for the
-[RO'H'BOTS](https://ro-h-bots.blogspot.com) blog. One file, no libraries, about 15 KB gzipped.
+[RO'H'BOTS](https://ro-h-bots.blogspot.com) blog. No libraries: the viewer (about 16 KB gzipped) plus KiCad's
+own stroke font (`newstroke.js`, about 16 KB gzipped), fetched from the same folder.
 
 What it does
 
@@ -11,10 +12,13 @@ What it does
   the page frame and the title block.
 - Zoom (wheel, buttons, pinch, double-click), pan (drag), **Fit**.
 - Hover a part (tap on a phone) to see its reference and value, for example `U2 · DRV8833PWP`.
-- Text is drawn in a plain font, not KiCad's stroke font.
+- Text is drawn with KiCad's own stroke font (newstroke), so boards and schematics look as they do in KiCad.
+  Until the font file has arrived (or if it cannot be fetched) a plain font stands in.
 
 What it does not do (on purpose, to stay small): 3D, hierarchical sheet navigation, net highlighting,
-measuring, printing, KiCad's exact stroke font, custom colour themes.
+measuring, printing, custom colour themes. The font covers Latin, Greek, Cyrillic, punctuation, currency,
+Ω and other letterlike symbols, arrows, maths, ⌀ and geometric shapes; other characters show as "?"
+(add a range in `tools/make_font.py` to cover more).
 
 ## Use
 
@@ -32,8 +36,10 @@ v.fit();                     // show everything
 v.destroy();
 ```
 
-`WebCircuitViewer.mount(element, url, { frame: true|false })` – `frame` draws the page border and title block
-(on for schematics, off for boards unless asked).
+`WebCircuitViewer.mount(element, url, { frame: true|false, font: true|false })` – `frame` draws the page border
+and title block (on for schematics, off for boards unless asked); `font: false` keeps the plain font and skips the
+font file. `WebCircuitViewer.preloadFont()` fetches the font early. When the box changes size (full screen, a
+phone turning) the drawing keeps its middle and scale, so a fitted board stays fitted.
 
 The file is fetched with `fetch`, so it has to be on the same site or on a site that allows cross-origin
 reads (GitHub Pages does).
@@ -41,6 +47,7 @@ reads (GitHub Pages does).
 ## Files
 
 - `web-circuit-viewer.js` – the viewer.
+- `newstroke.js` – the font, built from KiCad's `common/newstroke_font.cpp` by `tools/make_font.py`.
 - `test/` – a test page (`index.html`, shows the Thermometer board and schematic from the blog site) and the
   screenshot script.
 
@@ -49,4 +56,4 @@ Tested with KiCad 9 files (format 20260206 / 20260306).
 ## Licence
 
 GNU General Public License v3.0 or later, the same licence as KiCad. See `LICENSE`.
-Copyright (C) 2026 RolandThsive.
+Copyright (C) 2026 RolandThsive. The newstroke font is by Vladimir Uryvaev and the KiCad developers (CC0 1.0).

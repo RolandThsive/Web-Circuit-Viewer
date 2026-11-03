@@ -2,7 +2,7 @@
  * Web-Circuit-Viewer - a very small web viewer for KiCad PCB (.kicad_pcb) and schematic (.kicad_sch) files.
  * Copyright (C) 2026 RolandThsive (RO'H'BOTS). Licensed under the GNU GPL v3 or later, like KiCad itself
  * (see LICENSE). One file, no libraries. Draws on a <canvas>: zoom, pan, layer switches and part names on
- * hover. Text is drawn in a plain font (not KiCad's own stroke font).
+ * hover. Text is drawn with KiCad's own stroke font (newstroke.js, next to this file).
  *
  * Use:
  *   <script src="https://RolandThsive.github.io/Web-Circuit-Viewer/web-circuit-viewer.js"></script>
@@ -134,7 +134,8 @@
       var thick = font && one(font, "thickness"), j = eff && one(eff, "justify"), at = xy(g, "at");
       var p = T([at[0], at[1]]);
       use(L);
-      var it = { k: "text", x: p[0], y: p[1], s: cleanText(s), h: h, bold: thick && num(thick[1]) > h * 0.17, a: angle,
+      var it = { k: "text", x: p[0], y: p[1], s: cleanText(s), h: h, w: size ? num(size[2], h) : h, t: thick ? num(thick[1]) : 0,
+        bold: thick && num(thick[1]) > h * 0.17, i: !!(font && flag(font, "italic")), a: angle,
         jx: j && j.indexOf("left") > 0 ? "left" : j && j.indexOf("right") > 0 ? "right" : "center",
         jy: j && j.indexOf("top") > 0 ? "top" : j && j.indexOf("bottom") > 0 ? "bottom" : "middle",
         mirror: (j && j.indexOf("mirror") > 0) || /^B\./.test(L), c: colOf(L), L: L };
@@ -244,12 +245,12 @@
     var items = [], parts = [], libs = {};
     var ls = one(root, "lib_symbols");
     if (ls) all(ls, "symbol").forEach(function (s) { libs[s[1]] = s; });
-    function textAt(s, x, y, h, angle, jx, jy, col, bold) { items.push({ k: "text", x: x, y: y, s: cleanText(s), h: h, a: angle, jx: jx, jy: jy, c: col, bold: bold }); }
+    function textAt(s, x, y, h, angle, jx, jy, col, bold, italic) { items.push({ k: "text", x: x, y: y, s: cleanText(s), h: h, a: angle, jx: jx, jy: jy, c: col, bold: bold, i: italic }); }
     function effects(node) {
       var eff = one(node, "effects"), font = eff && one(eff, "font"), size = font && one(font, "size"), j = eff && one(eff, "justify");
       return { h: size ? num(size[1], 1.27) : 1.27, hide: flag(node, "hide") || (eff && flag(eff, "hide")),
         jx: j && j.indexOf("left") > 0 ? "left" : j && j.indexOf("right") > 0 ? "right" : "center",
-        jy: j && j.indexOf("top") > 0 ? "top" : j && j.indexOf("bottom") > 0 ? "bottom" : "middle", bold: font && flag(font, "bold") };
+        jy: j && j.indexOf("top") > 0 ? "top" : j && j.indexOf("bottom") > 0 ? "bottom" : "middle", bold: font && flag(font, "bold"), italic: font && flag(font, "italic") };
     }
     // readable text: 180 becomes 0 and 270 becomes 90, and the alignment flips with it
     function upright(angle, jx, jy) {
@@ -311,7 +312,7 @@
         var at3 = xy(g, "at"), e3 = effects(g), u3 = upright(at3[2] || 0, e3.jx === "center" ? "left" : e3.jx, e3.jy === "middle" ? "bottom" : e3.jy);
         String(g[1]).split("\n").forEach(function (line, k) {
           var off = rot(0, k * e3.h * 1.6, u3[0]);
-          textAt(line, at3[0] + off[0], at3[1] + off[1], e3.h, u3[0], u3[1], u3[2], SCH_COL.note, e3.bold);
+          textAt(line, at3[0] + off[0], at3[1] + off[1], e3.h, u3[0], u3[1], u3[2], SCH_COL.note, e3.bold, e3.italic);
         });
       } else if (t === "rectangle" || t === "text_box") {
         var s2 = xy(g, "start") || xy(g, "at"), e4 = xy(g, "end") || (s2 && xy(g, "size") ? [s2[0] + xy(g, "size")[0], s2[1] + xy(g, "size")[1]] : null);
@@ -371,7 +372,7 @@
         var e = effects(pr), pa = xy(pr, "at");
         if (e.hide || !pa || /^#/.test(pr[2])) return;
         var u = fieldOrient(pa[2] || 0, ang, mir, e.jx);
-        textAt(pr[2], pa[0], pa[1], e.h, u[0], u[1], e.jy, pr[1] === "Reference" ? SCH_COL.ref : pr[1] === "Value" ? SCH_COL.value : SCH_COL.field, e.bold);
+        textAt(pr[2], pa[0], pa[1], e.h, u[0], u[1], e.jy, pr[1] === "Reference" ? SCH_COL.ref : pr[1] === "Value" ? SCH_COL.value : SCH_COL.field, e.bold, e.italic);
       });
       part.items = items.slice(start);
       part.box = boxOf(part.items.filter(function (i) { return i.k !== "text"; }));
@@ -528,14 +529,79 @@
       ctx.fillStyle = PCB_COL.hole; ctx.beginPath(); roundRect(ctx, -p.dw / 2, -p.dh / 2, p.dw, p.dh, Math.min(p.dw, p.dh) / 2); ctx.fill(); ctx.restore();
     }
   }
+  /* ---- KiCad's own stroke font (newstroke), loaded from newstroke.js next to this script.
+     Hershey encoding: the first two characters give the left/right bounds, then x,y pairs as
+     (char - 'R') / 21, " R" lifts the pen; y gets KiCad's offset of -8. Sizes are in units of the text height. */
+  var FONT = { ready: false, failed: false, glyphs: {}, ranges: null, space: 0.5, waiting: [] };
+  var SCRIPT_DIR = (function () { try { return new URL(".", document.currentScript.src).href; } catch (e) { return ""; } })();
+  function loadFont(onReady) {
+    if (FONT.ready) return;
+    if (onReady) FONT.waiting.push(onReady);
+    if (FONT.loading || FONT.failed) return;
+    FONT.loading = true;
+    var done = function () {
+      if (!window.WCV_FONT) { FONT.failed = true; return; }
+      FONT.ranges = window.WCV_FONT.map(function (r) { return [r[0], r[1].split("\n")]; });
+      FONT.space = glyphOf(32).w; FONT.ready = true;
+      FONT.waiting.forEach(function (f) { f(); }); FONT.waiting = [];
+    };
+    if (window.WCV_FONT) { done(); return; }
+    var sc = document.createElement("script"); sc.src = SCRIPT_DIR + "newstroke.js";
+    sc.onload = done; sc.onerror = function () { FONT.failed = true; };
+    document.head.appendChild(sc);
+  }
+  function glyphOf(cp) {
+    var g = FONT.glyphs[cp]; if (g) return g;
+    var src = null;
+    for (var i = 0; i < FONT.ranges.length; i++) { var r = FONT.ranges[i]; if (cp >= r[0] && cp < r[0] + r[1].length) { src = r[1][cp - r[0]]; break; } }
+    if (src == null) return cp === 63 ? { w: 0.5, p: [] } : glyphOf(63);
+    var x0 = (src.charCodeAt(0) - 82) / 21, x1 = (src.charCodeAt(1) - 82) / 21, strokes = [], cur = [];
+    for (var k = 2; k + 1 < src.length; k += 2) {
+      if (src[k] === " " && src[k + 1] === "R") { if (cur.length) strokes.push(cur); cur = []; continue; }
+      cur.push([(src.charCodeAt(k) - 82) / 21 - x0, (src.charCodeAt(k + 1) - 82 - 8) / 21]);
+    }
+    if (cur.length) strokes.push(cur);
+    g = { w: x1 - x0, p: strokes }; FONT.glyphs[cp] = g; return g;
+  }
+  function lineWidth(line, w) {           // advance of one line, in mm (KiCad: glyph width + 0.2 em between glyphs, space = width of ' ')
+    var x = 0;
+    for (var i = 0; i < line.length; i++) { var cp = line.codePointAt(i); if (cp > 0xffff) i++; x += (cp === 32 ? FONT.space : glyphOf(cp).w) * w; }
+    return x;
+  }
   function drawText(ctx, t, s) {
     if (!t.s || t.h * s < 2.5) return;              // too small to read at this zoom: skip it
-    var em = t.h / 0.72;                             // KiCad's size is the capital height
     ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(-(t.a || 0) * Math.PI / 180);
     if (t.mirror) ctx.scale(-1, 1);
-    ctx.font = (t.bold ? "bold " : "") + em + "px Arial, Helvetica, sans-serif";
-    ctx.fillStyle = t.c; ctx.textAlign = t.jx || "center"; ctx.textBaseline = t.jy === "top" ? "top" : t.jy === "bottom" ? "alphabetic" : "middle";
-    ctx.fillText(t.s, 0, 0); ctx.restore();
+    if (!FONT.ready) {                              // the font is still on its way: a plain font for now
+      var em = t.h / 0.72;
+      ctx.font = (t.bold ? "bold " : "") + em + "px Arial, Helvetica, sans-serif";
+      ctx.fillStyle = t.c; ctx.textAlign = t.jx || "center"; ctx.textBaseline = t.jy === "top" ? "top" : t.jy === "bottom" ? "alphabetic" : "middle";
+      ctx.fillText(t.s.split("\n")[0], 0, 0); ctx.restore(); return;
+    }
+    var h = t.h, w = t.w || h, lines = t.s.split("\n"), pitch = h * 1.55, tilt = t.i ? 1 / 8 : 0;
+    var th = t.t || (t.bold ? h / 5 : h / 8);
+    ctx.strokeStyle = t.c; ctx.lineWidth = Math.max(th, 1 / s); ctx.lineCap = "round"; ctx.lineJoin = "round";
+    // vertical: bottom = baseline on the anchor, middle = anchor in the middle of the (first) line, top = line hangs below
+    var y0 = t.jy === "top" ? h : t.jy === "bottom" ? 0 : h / 2;
+    if (lines.length > 1) y0 -= (t.jy === "top" ? 0 : t.jy === "bottom" ? (lines.length - 1) * pitch : (lines.length - 1) * pitch / 2);
+    ctx.beginPath();
+    for (var li = 0; li < lines.length; li++) {
+      var line = lines[li], lw = lineWidth(line, w) - 0.2 * w, x = t.jx === "left" ? 0 : t.jx === "right" ? -lw : -lw / 2, y = y0 + li * pitch;
+      for (var i = 0; i < line.length; i++) {
+        var cp = line.codePointAt(i); if (cp > 0xffff) i++;
+        if (cp === 32) { x += FONT.space * w; continue; }
+        var g = glyphOf(cp);
+        for (var a = 0; a < g.p.length; a++) {
+          var st = g.p[a];
+          for (var b = 0; b < st.length; b++) {
+            var px = x + (st[b][0] - st[b][1] * tilt) * w, py = y + st[b][1] * h;
+            if (b) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+          }
+        }
+        x += g.w * w;
+      }
+    }
+    ctx.stroke(); ctx.restore();
   }
 
   /* ================================================================== the viewer */
@@ -554,6 +620,7 @@
 
   function mount(host, url, opts) {
     addCss(); opts = opts || {};
+    if (opts.font !== false) loadFont(function () { draw(); });
     var box = document.createElement("div"); box.className = "wcv";
     var cv = document.createElement("canvas"), ctx = cv.getContext("2d");
     var bar = document.createElement("div"); bar.className = "wcv-bar";
@@ -582,7 +649,7 @@
       var bw = (b[2] - b[0]) * (1 + 2 * pad) || 1, bh = (b[3] - b[1]) * (1 + 2 * pad) || 1;
       view.s = Math.min(w / bw, h / bh);
       view.x = w / 2 - (b[0] + b[2]) / 2 * view.s; view.y = h / 2 - (b[1] + b[3]) / 2 * view.s;
-      draw();
+      lastW = cv.clientWidth; lastH = cv.clientHeight; draw();
     }
     function zoomAt(px, py, f) {
       var s2 = Math.max(0.05, Math.min(view.s * f, 2000));
@@ -701,16 +768,31 @@
         buildLayers(); msg.style.display = "none"; fit();
       }).catch(function (e) { msg.style.display = ""; msg.textContent = "Couldn't open this file (" + e.message + ")."; });
     }
-    var ro = window.ResizeObserver ? new ResizeObserver(function () { draw(); }) : null;
-    if (ro) ro.observe(box); else window.addEventListener("resize", draw);
-    var first = true;
-    if (ro) new ResizeObserver(function () { if (model && first) { first = false; fit(); } }).observe(box);
+    // when the box changes size (full screen, phone rotation, a resized window) the drawing keeps the same
+    // point in its middle and grows or shrinks with the box, so a fitted board stays fitted
+    var lastW = 0, lastH = 0;
+    function resized() {
+      var w = cv.clientWidth, h = cv.clientHeight;
+      if (!w || !h) return;
+      if (model && lastW && lastH && (w !== lastW || h !== lastH)) {
+        var cx = (lastW / 2 - view.x) / view.s, cy = (lastH / 2 - view.y) / view.s;     // world point in the middle
+        var f = Math.min(w / lastW, h / lastH);
+        view.s *= f; view.x = w / 2 - cx * view.s; view.y = h / 2 - cy * view.s;
+      }
+      if (model && !lastW) { lastW = w; lastH = h; fit(); return; }
+      lastW = w; lastH = h; draw();
+    }
+    var ro = window.ResizeObserver ? new ResizeObserver(resized) : null;
+    if (ro) ro.observe(box); else window.addEventListener("resize", resized);
     if (url) load(url);
     return {
       load: load, fit: fit, element: box,
       destroy: function () { dead = true; if (ro) ro.disconnect(); box.remove(); }
     };
   }
+
+  // the font can be fetched early (for example while the file is still downloading)
+  function preloadFont() { loadFont(); }
 
   /* ================================================================== <web-circuit-viewer src="..."> */
   if (window.customElements && !customElements.get("web-circuit-viewer")) {
@@ -722,5 +804,5 @@
     });
   }
 
-  window.WebCircuitViewer = { mount: mount, parse: parse, version: "1.0.0" };
+  window.WebCircuitViewer = { mount: mount, parse: parse, preloadFont: preloadFont, version: "1.1.0" };
 })();

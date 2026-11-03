@@ -1,0 +1,21 @@
+{
+  "_about": "Settings of the Web Circuit Viewer page. The viewer itself (../web-circuit-viewer.js) needs none.",
+  "viewer": "../web-circuit-viewer.js",
+  "_examples": "Files offered under the drop zone: a name and the addresses of its board and/or schematic (any site that allows cross-origin reads, GitHub Pages does).",
+  "examples": [
+    { "name": "Thermometer main board", "pcb": "https://RolandThsive.github.io/Assets/PCB_Assets/TheMainBoard - Thermometer/TheMainBoard.kicad_pcb", "sch": "https://RolandThsive.github.io/Assets/PCB_Assets/TheMainBoard - Thermometer/TheMainBoard.kicad_sch" },
+    { "name": "VOC meter main board", "pcb": "https://RolandThsive.github.io/Assets/PCB_Assets/TheMainBoard - VOC/TheMainBoard.kicad_pcb", "sch": "https://RolandThsive.github.io/Assets/PCB_Assets/TheMainBoard - VOC/TheMainBoard.kicad_sch" }
+  ],
+  "_posterSizes": "The size presets of the poster maker (pixels). The first one is the default.",
+  "posterSizes": [
+    { "name": "Blog poster", "width": 1430, "height": 1016, "tip": "The size of the posters on the blog (A4 landscape)" },
+    { "name": "Large", "width": 2860, "height": 2032, "tip": "Twice the blog poster, for print or sharp zooms" },
+    { "name": "Square", "width": 1600, "height": 1600 },
+    { "name": "Wide", "width": 1920, "height": 1080 },
+    { "name": "Custom", "width": 0, "height": 0 }
+  ],
+  "links": {
+    "repository": "https://github.com/RolandThsive/Web-Circuit-Viewer",
+    "blogHome": "https://ro-h-bots.blogspot.com/"
+  }
+}

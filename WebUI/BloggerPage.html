@@ -1,0 +1,66 @@
+<!--
+  BloggerPage.html - paste this whole file into a Blogger page (Pages > New Page > the pencil's "HTML view").
+  Title the page "Web Circuit Viewer".
+
+  It hides everything else on the page (header, sidebar, title, comments, footer), fills the window with the
+  Web Circuit Viewer, and puts Back and Home buttons at the top right. The tool itself is served from the
+  GitHub repository (GitHub Pages) and runs in the visitor's browser: files are never uploaded. Phones work too.
+
+  Change APP_URL below if the GitHub Pages address changes (it follows the repository name).
+  A link to the page can carry files: /p/web-circuit-viewer.html?pcb=<url>&sch=<url> (passed on to the tool).
+-->
+<style>
+  html, body { overflow: hidden !important; height: 100% !important; }
+  body * { visibility: hidden !important; }                      /* the blog stays, unseen and unclickable */
+  #wcv-shell, #wcv-shell * { visibility: visible !important; }
+  #wcv-shell { position: fixed; inset: 0; z-index: 2147483000; margin: 0; padding: 0; background: #f4f1ea; }
+  #wcv-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; }
+  #wcv-nav { position: absolute; top: 12px; right: 16px; display: flex; gap: 8px; z-index: 2; }
+  #wcv-nav a {
+    width: 38px; height: 38px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(255, 255, 255, 0.3); border: 1px solid rgba(255, 255, 255, 0.2); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); transition: all 0.3s ease; cursor: pointer;
+  }
+  #wcv-nav a:hover { background: rgba(248, 236, 198, 0.4); }
+  #wcv-nav svg { width: 20px; height: 20px; fill: none; stroke: #333; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: all 0.3s ease; }
+  #wcv-nav a:hover svg { stroke: #a93e33; }
+  @media (max-width: 640px) { #wcv-nav { top: 8px; right: 8px; } #wcv-nav a { width: 34px; height: 34px; } }
+</style>
+
+<div id="wcv-shell">
+  <iframe id="wcv-frame" title="Web Circuit Viewer" allow="fullscreen" allowfullscreen></iframe>
+  <nav id="wcv-nav">
+    <a id="wcv-back" title="Back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></a>
+    <a id="wcv-home" title="Home" aria-label="Home"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 9.5V20h4.5v-6h3v6H18V9.5"/></svg></a>
+  </nav>
+</div>
+
+<script>
+(function () {
+  var APP_URL = "https://rolandthsive.github.io/Web-Circuit-Viewer/WebUI/";
+  var HOME = location.origin + "/";
+
+  var shell = document.getElementById("wcv-shell");
+  var frame = document.getElementById("wcv-frame");
+  document.body.appendChild(shell);           // out of the theme's wrappers, so nothing can clip or shift it
+
+  // The tab shows the viewer's logo, not the blog's icon.
+  var icons = document.querySelectorAll('link[rel~="icon"]');
+  for (var i = 0; i < icons.length; i++) icons[i].parentNode.removeChild(icons[i]);
+  var icon = document.createElement("link");
+  icon.rel = "icon"; icon.type = "image/svg+xml"; icon.href = APP_URL + "logo.svg";
+  document.head.appendChild(icon);
+
+  // Home: the blog's front page. Back: the page the visitor came from on this blog, else the front page.
+  document.getElementById("wcv-home").href = HOME;
+  var back = document.getElementById("wcv-back");
+  back.href = HOME;
+  back.addEventListener("click", function (e) {
+    var cameFromBlog = document.referrer && document.referrer.indexOf(location.origin) === 0;
+    if (cameFromBlog && history.length > 1) { e.preventDefault(); history.back(); }
+  });
+
+  // files named in this page's address are handed to the tool
+  frame.src = APP_URL + (location.search || "");
+})();
+</script>

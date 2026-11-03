@@ -4,14 +4,22 @@ A very small web viewer for KiCad boards (`.kicad_pcb`) and schematics (`.kicad_
 [RO'H'BOTS](https://ro-h-bots.blogspot.com) blog. No libraries: the viewer (about 16 KB gzipped) plus KiCad's
 own stroke font (`newstroke.js`, about 16 KB gzipped), fetched from the same folder.
 
+**Use it online:** https://RolandThsive.github.io/Web-Circuit-Viewer/WebUI/ — open a `.kicad_pcb` or `.kicad_sch`
+(nothing is uploaded), look around, and make posters of it. A link can open files directly:
+`WebUI/?pcb=<url>&sch=<url>`.
+
 What it does
 
 - Boards: copper tracks, vias, pads (with drill holes), filled zones, silkscreen, outline and the other layers.
   A **Layers** button switches layers on and off (Front / Back / All shortcuts).
 - Schematics: symbols, pins with names and numbers, wires, buses, junctions, no-connects, labels, notes,
   the page frame and the title block.
-- Zoom (wheel, buttons, pinch, double-click), pan (drag), **Fit**.
+- Zoom (wheel, buttons, pinch, double-click), pan (drag), **Fit**, **Flip** (the board seen from the back: mirrored,
+  the back copper and silkscreen on top, back-side text readable).
 - Hover a part (tap on a phone) to see its reference and value, for example `U2 · DRV8833PWP`.
+- Posters: `render()` draws the circuit into a picture of any size (the page's Poster panel: blog poster, large, square,
+  wide or custom; WebP / PNG / JPEG; everything or the current view; see-through background with the board's shape kept
+  and the holes punched through).
 - Text is drawn with KiCad's own stroke font (newstroke), so boards and schematics look as they do in KiCad.
   Until the font file has arrived (or if it cannot be fetched) a plain font stands in.
 
@@ -36,7 +44,10 @@ v.fit();                     // show everything
 v.destroy();
 ```
 
-`WebCircuitViewer.mount(element, url, { frame: true|false, font: true|false })` – `frame` draws the page border
+`WebCircuitViewer.mount(element, url, { frame, font, onLoad, onError, onLayers })` returns a viewer with
+`load(url)`, `loadText(text, name)`, `fit()`, `flip()`, `focus("U2")`, `zoom(1.4)`, `setLayer("B.Cu", false)`, `info()`,
+`render({ width, height, view: "fit"|"current", background: "auto"|"transparent"|colour, frame, board })` → canvas,
+`toBlob(canvas, type, quality)` and `destroy()`. – `frame` draws the page border
 and title block (on for schematics, off for boards unless asked); `font: false` keeps the plain font and skips the
 font file. `WebCircuitViewer.preloadFont()` fetches the font early. When the box changes size (full screen, a
 phone turning) the drawing keeps its middle and scale, so a fitted board stays fitted.
@@ -47,6 +58,8 @@ reads (GitHub Pages does).
 ## Files
 
 - `web-circuit-viewer.js` – the viewer.
+- `WebUI/` – the Web Circuit Viewer page (index.html, WebUI.css, WebUI.js, webui.json with the examples and poster
+  sizes, logo.svg) and `BloggerPage.html`, the page that embeds it in the blog.
 - `newstroke.js` – the font, built from KiCad's `common/newstroke_font.cpp` by `tools/make_font.py`.
 - `test/` – a test page (`index.html`, shows the Thermometer board and schematic from the blog site) and the
   screenshot script.

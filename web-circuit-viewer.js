@@ -8,7 +8,9 @@
  *   <script src="https://RolandThsive.github.io/Web-Circuit-Viewer/web-circuit-viewer.js"></script>
  *   <web-circuit-viewer src="board.kicad_pcb" style="display:block;height:500px"></web-circuit-viewer>
  * or from a script:
- *   var v = WebCircuitViewer.mount(element, "board.kicad_sch");   v.load(otherUrl);   v.destroy();
+ *   var v = WebCircuitViewer.mount(element, "board.kicad_sch", { frame, font, onLoad, onError, onLayers });
+ *   v.load(url)  v.loadText(text, name)  v.fit()  v.flip()  v.focus("U2")  v.zoom(1.4)  v.setLayer("B.Cu", false)
+ *   v.info()  v.render({ width, height, view, background, frame }) -> canvas   v.toBlob(canvas, type, quality)   v.destroy()
  */
 (function () {
   "use strict";
@@ -138,7 +140,7 @@
         bold: thick && num(thick[1]) > h * 0.17, i: !!(font && flag(font, "italic")), a: angle,
         jx: j && j.indexOf("left") > 0 ? "left" : j && j.indexOf("right") > 0 ? "right" : "center",
         jy: j && j.indexOf("top") > 0 ? "top" : j && j.indexOf("bottom") > 0 ? "bottom" : "middle",
-        mirror: (j && j.indexOf("mirror") > 0) || /^B\./.test(L), c: colOf(L), L: L };
+        mirror: !!(j && j.indexOf("mirror") > 0), c: colOf(L), L: L };   // KiCad: only the mirror flag mirrors, not the layer
       items.push(it); if (owner) owner.items.push(it);
     }
     function padLayers(list) {      // "*.Cu", "F&B.Cu" ... -> real layer names on this board
@@ -230,10 +232,41 @@
       return 45;
     }
     items.sort(function (a, b) { return rank(a) - rank(b); });
+    // seen from the back the sides swap: back copper and silkscreen on top
+    function flipRank(it) { var L = it.L || ""; return rank(Object.assign({}, it, { L: /^F\./.test(L) ? "B" + L.slice(1) : /^B\./.test(L) ? "F" + L.slice(1) : L })); }
+    var itemsBack = items.slice().sort(function (a, b) { return flipRank(a) - flipRank(b); });
     var bb = boxOf(edge.length ? edge : items);
     parts.forEach(function (p) { p.box = boxOf(p.items.filter(function (i) { return i.k !== "text"; })); });
+    // the board's shape: the Edge.Cuts drawings chained into closed loops (for the see-through posters)
+    function arcPts(A) {
+      var n = Math.max(8, Math.ceil(Math.abs(sweep(A)) * A.r / 0.5)), out = [], d = sweep(A);
+      for (var i = 0; i <= n; i++) { var a = A.a0 + d * i / n; out.push([A.x + A.r * Math.cos(a), A.y + A.r * Math.sin(a)]); }
+      return out;
+    }
+    function sweep(A) { var d = A.a1 - A.a0; if (A.ccw) { while (d > 0) d -= 2 * Math.PI; } else { while (d < 0) d += 2 * Math.PI; } return d; }
+    var loops = [], pieces = [];
+    edge.forEach(function (it) {
+      if (it.k === "circle") { var c = []; for (var i = 0; i < 72; i++) c.push([it.x + it.r * Math.cos(i * Math.PI / 36), it.y + it.r * Math.sin(i * Math.PI / 36)]); loops.push(c); }
+      else if (it.k === "poly") loops.push(it.p.slice());
+      else if (it.k === "line") pieces.push([it.a, it.b]);
+      else if (it.k === "arc") pieces.push(arcPts(it));
+      else if (it.k === "bezier" && it.p.length === 4) { var q = []; for (var t = 0; t <= 16; t++) { var u = t / 16, v = 1 - u, P = it.p; q.push([v*v*v*P[0][0]+3*v*v*u*P[1][0]+3*v*u*u*P[2][0]+u*u*u*P[3][0], v*v*v*P[0][1]+3*v*v*u*P[1][1]+3*v*u*u*P[2][1]+u*u*u*P[3][1]]); } pieces.push(q); }
+    });
+    var near = function (a, b) { return Math.abs(a[0] - b[0]) < 0.02 && Math.abs(a[1] - b[1]) < 0.02; };
+    while (pieces.length) {
+      var chain = pieces.shift(), grew = true;
+      while (grew && !near(chain[0], chain[chain.length - 1])) {
+        grew = false;
+        for (var i = 0; i < pieces.length; i++) {
+          var pc = pieces[i], end = chain[chain.length - 1];
+          if (near(pc[0], end)) { chain = chain.concat(pc.slice(1)); pieces.splice(i, 1); grew = true; break; }
+          if (near(pc[pc.length - 1], end)) { chain = chain.concat(pc.slice(0, -1).reverse()); pieces.splice(i, 1); grew = true; break; }
+        }
+      }
+      if (chain.length > 2 && near(chain[0], chain[chain.length - 1])) loops.push(chain);
+    }
     var order = Object.keys(layersUsed).sort(function (a, b) { return layerSort(a) - layerSort(b); });
-    return { kind: "pcb", items: items, parts: parts, box: bb, layers: order, paper: paperOf(root), title: one(root, "title_block") };
+    return { kind: "pcb", items: items, itemsBack: itemsBack, parts: parts, box: bb, layers: order, paper: paperOf(root), title: one(root, "title_block"), outline: loops };
   }
   function layerSort(L) {
     var o = ["F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu", "Vias", "F.SilkS", "B.SilkS", "Edge.Cuts", "F.Mask", "B.Mask", "F.Paste", "B.Paste", "F.Fab", "B.Fab", "F.CrtYd", "B.CrtYd"];
@@ -492,16 +525,22 @@
         ctx.beginPath(); ctx.arc(it.x, it.y, it.r, it.a0, it.a1, it.ccw); ctx.stroke(); break;
       case "via":
         ctx.fillStyle = PCB_COL.via; ctx.beginPath(); ctx.arc(it.x, it.y, it.r, 0, 2 * Math.PI); ctx.fill();
-        ctx.fillStyle = PCB_COL.hole; ctx.beginPath(); ctx.arc(it.x, it.y, it.d, 0, 2 * Math.PI); ctx.fill(); break;
-      case "pad": drawPad(ctx, it); break;
-      case "text": drawText(ctx, it, s); break;
+        hole(ctx, model, function () { ctx.beginPath(); ctx.arc(it.x, it.y, it.d, 0, 2 * Math.PI); ctx.fill(); }); break;
+      case "pad": drawPad(ctx, it, model); break;
+      case "text": drawText(ctx, it, s, model); break;
     }
   }
   function roundRect(ctx, x, y, w, h, r) {
     r = Math.min(r, w / 2, h / 2);
     ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
-  function drawPad(ctx, p) {
+  // a drill hole: dark, or punched right through the picture (see-through posters)
+  function hole(ctx, model, shape) {
+    var punch = model && model._punch;
+    ctx.save(); ctx.fillStyle = PCB_COL.hole; if (punch) ctx.globalCompositeOperation = "destination-out";
+    shape(); ctx.restore();
+  }
+  function drawPad(ctx, p, model) {
     ctx.fillStyle = p.c;
     if (!p.holeOnly) {
       if (p.shape === "custom" && p.prim && p.prim.length) {
@@ -524,10 +563,10 @@
       if (!p.th && !p.holeOnly) { ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 0.05; ctx.stroke(); }
       ctx.restore();
     }
-    if (p.drill) {
-      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(-p.a * Math.PI / 180);
-      ctx.fillStyle = PCB_COL.hole; ctx.beginPath(); roundRect(ctx, -p.dw / 2, -p.dh / 2, p.dw, p.dh, Math.min(p.dw, p.dh) / 2); ctx.fill(); ctx.restore();
-    }
+    if (p.drill) hole(ctx, model, function () {
+      ctx.translate(p.x, p.y); ctx.rotate(-p.a * Math.PI / 180);
+      ctx.beginPath(); roundRect(ctx, -p.dw / 2, -p.dh / 2, p.dw, p.dh, Math.min(p.dw, p.dh) / 2); ctx.fill();
+    });
   }
   /* ---- KiCad's own stroke font (newstroke), loaded from newstroke.js next to this script.
      Hershey encoding: the first two characters give the left/right bounds, then x,y pairs as
@@ -568,10 +607,10 @@
     for (var i = 0; i < line.length; i++) { var cp = line.codePointAt(i); if (cp > 0xffff) i++; x += (cp === 32 ? FONT.space : glyphOf(cp).w) * w; }
     return x;
   }
-  function drawText(ctx, t, s) {
+  function drawText(ctx, t, s, model) {
     if (!t.s || t.h * s < 2.5) return;              // too small to read at this zoom: skip it
     ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(-(t.a || 0) * Math.PI / 180);
-    if (t.mirror) ctx.scale(-1, 1);
+    if (!!t.mirror !== !!(model && model.flipped)) ctx.scale(-1, 1);
     if (!FONT.ready) {                              // the font is still on its way: a plain font for now
       var em = t.h / 0.72;
       ctx.font = (t.bold ? "bold " : "") + em + "px Arial, Helvetica, sans-serif";
@@ -609,13 +648,13 @@
     ".wcv canvas{display:block;width:100%;height:100%;cursor:grab}.wcv canvas.drag{cursor:grabbing}" +
     ".wcv-bar{position:absolute;right:10px;bottom:10px;display:flex;gap:6px;z-index:2}" +
     ".wcv-bar button,.wcv-lay button{font:inherit;font-size:13px;border:1px solid rgba(0,0,0,.15);background:rgba(255,255,255,.92);color:#333;border-radius:8px;min-width:34px;height:32px;padding:0 9px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.2)}" +
-    ".wcv-bar button:hover{background:#fff}" +
+    ".wcv-bar button:hover{background:#fff}.wcv-bar button.on{background:#333;color:#fff;border-color:#333}" +
     ".wcv-lay{position:absolute;right:10px;bottom:50px;z-index:2;background:rgba(255,255,255,.95);border-radius:10px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,.3);max-height:calc(100% - 70px);overflow:auto;display:none;min-width:150px}" +
     ".wcv-lay.open{display:block}.wcv-lay label{display:flex;align-items:center;gap:7px;padding:3px 4px;cursor:pointer;color:#333;white-space:nowrap}" +
     ".wcv-lay i{width:14px;height:14px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.25)}" +
     ".wcv-lay .wcv-row{display:flex;gap:6px;margin-top:6px}.wcv-lay .wcv-row button{height:26px;font-size:12px;flex:1}" +
     ".wcv-tip{position:absolute;z-index:3;pointer-events:none;background:rgba(20,20,20,.88);color:#fff;padding:4px 9px;border-radius:7px;font-size:12.5px;white-space:nowrap;display:none}" +
-    ".wcv-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#888;font-size:14px;text-align:center;padding:20px}";
+    ".wcv-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#888;font-size:14px;text-align:center;padding:20px;pointer-events:none}";
   function addCss() { if (document.getElementById("wcv-css")) return; var s = document.createElement("style"); s.id = "wcv-css"; s.textContent = CSS; document.head.appendChild(s); }
 
   function mount(host, url, opts) {
@@ -630,9 +669,11 @@
     box.appendChild(cv); box.appendChild(bar); box.appendChild(lay); box.appendChild(tip); box.appendChild(msg);
     host.appendChild(box);
     var model = null, frame = [], view = { s: 1, x: 0, y: 0 }, on = {}, hover = null, raf = 0, dead = false;
+    var pendingKind = null;        // "pcb" | "sch" from the file name, so the right background shows while it loads
 
     function btn(label, title, fn) { var b = document.createElement("button"); b.type = "button"; b.textContent = label; b.title = title; b.setAttribute("aria-label", title); b.addEventListener("click", fn); bar.appendChild(b); return b; }
     var layBtn = btn("Layers", "Show or hide layers", function () { lay.classList.toggle("open"); });
+    var flipBtn = btn("Flip", "Look at the board from the other side", function () { flip(); });
     btn("−", "Zoom out", function () { zoomAt(cv.clientWidth / 2, cv.clientHeight / 2, 1 / 1.4); });
     btn("+", "Zoom in", function () { zoomAt(cv.clientWidth / 2, cv.clientHeight / 2, 1.4); });
     btn("Fit", "Show everything", function () { fit(); });
@@ -642,14 +683,30 @@
       if (cv.width !== Math.round(w * r) || cv.height !== Math.round(h * r)) { cv.width = Math.round(w * r); cv.height = Math.round(h * r); }
       return r;
     }
+    function sgn() { return model && model.flipped ? -1 : 1; }
+    // turn the board over: mirrored left-right, the other side's copper and silkscreen on top, same point in the middle
+    function flip() {
+      if (!model || model.kind !== "pcb") return;
+      var w = cv.clientWidth, cx = (w / 2 - view.x) / (sgn() * view.s);
+      model.flipped = !model.flipped;
+      view.x = w / 2 - sgn() * cx * view.s;
+      flipBtn.classList.toggle("on", model.flipped); flipBtn.textContent = model.flipped ? "Front" : "Flip";
+      flipBtn.title = model.flipped ? "Back to the front side" : "Look at the board from the other side";
+      draw();
+    }
     function fit() {
       if (!model) return;
-      var b = model.kind === "pcb" ? (model.box || [0, 0, 100, 100]) : (model.box || [0, 0, 297, 210]);
-      var w = cv.clientWidth || 600, h = cv.clientHeight || 400, pad = model.kind === "pcb" ? 0.08 : 0.02;
-      var bw = (b[2] - b[0]) * (1 + 2 * pad) || 1, bh = (b[3] - b[1]) * (1 + 2 * pad) || 1;
-      view.s = Math.min(w / bw, h / bh);
-      view.x = w / 2 - (b[0] + b[2]) / 2 * view.s; view.y = h / 2 - (b[1] + b[3]) / 2 * view.s;
+      view = fitView(cv.clientWidth || 600, cv.clientHeight || 400);
       lastW = cv.clientWidth; lastH = cv.clientHeight; draw();
+    }
+    // zoom to one part (by reference, e.g. "U2") and point it out
+    function focus(ref) {
+      if (!model) return false;
+      var p = model.parts.filter(function (q) { return q.ref === ref && q.box; })[0]; if (!p) return false;
+      var b = p.box, w = cv.clientWidth, h = cv.clientHeight, bw = (b[2] - b[0]) || 1, bh = (b[3] - b[1]) || 1;
+      var sc = Math.min(w / (bw * 6), h / (bh * 6), model.kind === "pcb" ? 60 : 20);
+      view = { s: sc, x: w / 2 - sgn() * (b[0] + b[2]) / 2 * sc, y: h / 2 - (b[1] + b[3]) / 2 * sc };
+      hover = p; draw(); return true;
     }
     function zoomAt(px, py, f) {
       var s2 = Math.max(0.05, Math.min(view.s * f, 2000));
@@ -659,29 +716,76 @@
     function paint() {
       raf = 0; if (dead) return;
       var r = size();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.fillStyle = model && model.kind === "sch" ? SCH_COL.bg : PCB_COL.bg; ctx.fillRect(0, 0, cv.width, cv.height);
+      scene(ctx, cv.clientWidth, cv.clientHeight, view, r, { background: "auto", frame: frame, hover: hover });
+    }
+    // draws the model into any 2d context: the screen (paint) or a poster (render)
+    // W, H in css px, v = {s, x, y}, r = device pixels per css px; o.background: "auto" | "transparent" | css colour
+    function scene(c, W, H, v, r, o) {
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.clearRect(0, 0, W * r, H * r);
+      if (o.background !== "transparent") {
+        c.fillStyle = o.background && o.background !== "auto" ? o.background : ((model ? model.kind : pendingKind) === "sch" ? SCH_COL.bg : PCB_COL.bg);
+        c.fillRect(0, 0, W * r, H * r);
+      }
       if (!model) return;
-      ctx.setTransform(view.s * r, 0, 0, view.s * r, view.x * r, view.y * r);
-      ctx.lineCap = "round"; ctx.lineJoin = "round";
-      var s = view.s, x0 = -view.x / s, y0 = -view.y / s, x1 = x0 + cv.clientWidth / s, y1 = y0 + cv.clientHeight / s;
-      frame.forEach(function (it) { drawItem(ctx, it, s, model); });
-      var pcb = model.kind === "pcb";
-      for (var i = 0; i < model.items.length; i++) {
-        var it = model.items[i];
+      model._punch = o.background === "transparent";
+      c.setTransform(sgn() * v.s * r, 0, 0, v.s * r, v.x * r, v.y * r);
+      c.lineCap = "round"; c.lineJoin = "round";
+      var s = v.s, xa = -v.x / (sgn() * s), xb = (W - v.x) / (sgn() * s);
+      var x0 = Math.min(xa, xb), x1 = Math.max(xa, xb), y0 = -v.y / s, y1 = y0 + H / s;
+      (o.frame || []).forEach(function (it) { drawItem(c, it, s, model); });
+      var pcb = model.kind === "pcb", list = model.flipped ? model.itemsBack : model.items;
+      if (pcb && o.board && model.outline && model.outline.length) {        // the board itself, holes and cut-outs left open
+        c.fillStyle = o.board === true ? PCB_COL.bg : o.board; c.beginPath();
+        model.outline.forEach(function (lp) { lp.forEach(function (q, i) { if (i) c.lineTo(q[0], q[1]); else c.moveTo(q[0], q[1]); }); c.closePath(); });
+        c.fill("evenodd");
+      }
+      for (var i = 0; i < list.length; i++) {
+        var it = list[i];
         if (pcb && it.L && !on[it.L]) continue;
         var bb = it._bb || (it._bb = boxOf([it]));
         if (bb && (bb[2] < x0 || bb[0] > x1 || bb[3] < y0 || bb[1] > y1)) continue;     // off screen
-        if (pcb && !it.zone && it.k !== "text") ctx.globalAlpha = 0.92; else ctx.globalAlpha = 1;
-        drawItem(ctx, it, s, model);
+        if (pcb && !it.zone && it.k !== "text") c.globalAlpha = 0.92; else c.globalAlpha = 1;
+        drawItem(c, it, s, model);
       }
-      ctx.globalAlpha = 1;
-      if (hover && hover.box) {
-        var hb = hover.box, m = 0.4;
-        ctx.lineWidth = 1.5 / s; ctx.strokeStyle = pcb ? PCB_COL.hover : "#0064c8"; ctx.setLineDash([4 / s, 3 / s]);
-        if (!pcb) { ctx.fillStyle = SCH_COL.hover; ctx.fillRect(hb[0] - m, hb[1] - m, hb[2] - hb[0] + 2 * m, hb[3] - hb[1] + 2 * m); }
-        ctx.strokeRect(hb[0] - m, hb[1] - m, hb[2] - hb[0] + 2 * m, hb[3] - hb[1] + 2 * m); ctx.setLineDash([]);
+      c.globalAlpha = 1;
+      var hv = o.hover;
+      if (hv && hv.box) {
+        var hb = hv.box, m = 0.4;
+        c.lineWidth = 1.5 / s; c.strokeStyle = pcb ? PCB_COL.hover : "#0064c8"; c.setLineDash([4 / s, 3 / s]);
+        if (!pcb) { c.fillStyle = SCH_COL.hover; c.fillRect(hb[0] - m, hb[1] - m, hb[2] - hb[0] + 2 * m, hb[3] - hb[1] + 2 * m); }
+        c.strokeRect(hb[0] - m, hb[1] - m, hb[2] - hb[0] + 2 * m, hb[3] - hb[1] + 2 * m); c.setLineDash([]);
       }
+    }
+    // the view that shows everything in a W x H box (what Fit does), with a margin as a fraction of the box
+    function fitView(W, H, margin) {
+      var b = model.box || (model.kind === "pcb" ? [0, 0, 100, 100] : [0, 0, 297, 210]);
+      var pad = margin != null ? margin : (model.kind === "pcb" ? 0.08 : 0.02);
+      var bw = (b[2] - b[0]) * (1 + 2 * pad) || 1, bh = (b[3] - b[1]) * (1 + 2 * pad) || 1, sc = Math.min(W / bw, H / bh);
+      return { s: sc, x: W / 2 - sgn() * (b[0] + b[2]) / 2 * sc, y: H / 2 - (b[1] + b[3]) / 2 * sc };
+    }
+    /* a poster: the drawing rendered into a new canvas of width x height pixels.
+       o.view: "fit" (default, everything, with o.margin) or "current" (what is on screen now);
+       o.background: "auto" (KiCad's) | "transparent" | a css colour;  o.frame: page frame on/off (schematics: on);
+       o.board: with a transparent background the board's own shape is still filled (true, default) in KiCad's dark
+       colour, or a css colour, or false for nothing but copper and silkscreen.
+       Returns the canvas; toBlob(canvas, "image/webp", 0.92) makes the file. */
+    function render(o) {
+      o = o || {};
+      if (!model) return null;
+      var W = Math.max(16, Math.round(o.width || 1600)), H = Math.max(16, Math.round(o.height || Math.round(W / 1.4142)));
+      var out = document.createElement("canvas"); out.width = W; out.height = H;
+      var c = out.getContext("2d"), v;
+      if (o.view === "current") {                      // the same picture as the screen, scaled to the poster
+        var k = Math.min(W / cv.clientWidth, H / cv.clientHeight);
+        v = { s: view.s * k, x: view.x * k + (W - cv.clientWidth * k) / 2, y: view.y * k + (H - cv.clientHeight * k) / 2 };
+      } else v = fitView(W, H, o.margin);
+      var fr = o.frame === true ? frameItems(model) : o.frame === false ? [] : frame;
+      scene(c, W, H, v, 1, { background: o.background || "auto", frame: fr, hover: null, board: o.board != null ? o.board : o.background === "transparent" });
+      return out;
+    }
+    function toBlob(canvas, type, quality) {
+      return new Promise(function (ok, fail) { canvas.toBlob(function (b) { b ? ok(b) : fail(new Error("no image")); }, type || "image/png", quality); });
     }
 
     // ---- pointer: drag to move, wheel / pinch to zoom, hover for the part's name
@@ -717,7 +821,7 @@
     cv.addEventListener("dblclick", function (e) { var r = cv.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, 2); });
     function hoverAt(px, py) {
       if (!model) return;
-      var x = (px - view.x) / view.s, y = (py - view.y) / view.s, best = null, ba = Infinity;
+      var x = (px - view.x) / (sgn() * view.s), y = (py - view.y) / view.s, best = null, ba = Infinity;
       model.parts.forEach(function (p) {
         var b = p.box; if (!b || !p.ref || /^#/.test(p.ref)) return;
         if (model.kind === "pcb" && p.items.length && !p.items.some(function (i) { return on[i.L]; })) return;
@@ -735,13 +839,13 @@
     // ---- the layer list (boards only)
     function buildLayers() {
       lay.innerHTML = "";
-      if (!model || model.kind !== "pcb") { layBtn.style.display = "none"; return; }
-      layBtn.style.display = "";
+      if (!model || model.kind !== "pcb") { layBtn.style.display = "none"; flipBtn.style.display = "none"; return; }
+      layBtn.style.display = ""; flipBtn.style.display = ""; flipBtn.classList.remove("on"); flipBtn.textContent = "Flip";
       model.layers.forEach(function (L) {
         var lab = document.createElement("label"), cb = document.createElement("input"), sw = document.createElement("i");
         cb.type = "checkbox"; cb.checked = !!on[L];
         sw.style.background = L === "Vias" ? PCB_COL.via : (PCB_COL[L] || PCB_COL.user);
-        cb.addEventListener("change", function () { on[L] = cb.checked; draw(); });
+        cb.addEventListener("change", function () { on[L] = cb.checked; draw(); if (opts.onLayers) opts.onLayers(Object.assign({}, on)); });
         lab.appendChild(cb); lab.appendChild(sw); lab.appendChild(document.createTextNode(L === "Vias" ? "Vias" : L.replace(".SilkS", ".Silkscreen")));
         lay.appendChild(lab);
       });
@@ -755,19 +859,39 @@
     }
 
     function load(u) {
+      pendingKind = /\.kicad_sch(\?|#|$)/i.test(u) ? "sch" : /\.kicad_pcb(\?|#|$)/i.test(u) ? "pcb" : null;
+      box.style.background = pendingKind === "sch" ? SCH_COL.bg : PCB_COL.bg;       // the same colour as the drawing, so nothing flashes
       msg.style.display = ""; msg.textContent = "Loading…"; model = null; hover = null; draw();
-      return fetch(u).then(function (r) { if (!r.ok) throw new Error("the file answered " + r.status); return r.text(); }).then(function (txt) {
-        if (dead) return;
+      return fetch(u).then(function (r) { if (!r.ok) throw new Error("the file answered " + r.status); return r.text(); })
+        .then(function (txt) { return loadText(txt, decodeURIComponent(String(u).split("/").pop().split("?")[0])); })
+        .catch(function (e) { fail(e); });
+    }
+    function fail(e) { msg.style.display = ""; msg.textContent = "Couldn't open this file (" + e.message + ")."; if (opts.onError) opts.onError(e); }
+    // the file's text (from a drop or a file picker); name is only shown in the title block
+    function loadText(txt, name) {
+      if (dead) return;
+      pendingKind = /\.kicad_sch$/i.test(name || "") ? "sch" : /\.kicad_pcb$/i.test(name || "") ? "pcb" : pendingKind;
+      try {
         var root = parse(txt);
         if (!root) throw new Error("not a KiCad file");
         model = root[0] === "kicad_pcb" ? buildPcb(root) : root[0] === "kicad_sch" ? buildSch(root) : null;
         if (!model) throw new Error("not a KiCad board or schematic");
-        model._root = root; model.file = decodeURIComponent(String(u).split("/").pop().split("?")[0]);
-        frame = (opts.frame === false || (opts.frame !== true && model.kind === "pcb")) ? [] : frameItems(model);
-        on = {}; model.layers.forEach(function (L) { on[L] = PCB_DEFAULT_ON.test(L) || L === "Vias"; });
-        buildLayers(); msg.style.display = "none"; fit();
-      }).catch(function (e) { msg.style.display = ""; msg.textContent = "Couldn't open this file (" + e.message + ")."; });
+      } catch (e) { model = null; fail(e); return; }
+      model._root = root; model.file = name || ""; pendingKind = model.kind; box.style.background = model.kind === "sch" ? SCH_COL.bg : PCB_COL.bg;
+      frame = (opts.frame === false || (opts.frame !== true && model.kind === "pcb")) ? [] : frameItems(model);
+      on = {}; model.layers.forEach(function (L) { on[L] = PCB_DEFAULT_ON.test(L) || L === "Vias"; });
+      buildLayers(); msg.style.display = "none"; fit();
+      if (opts.onLoad) opts.onLoad(info());
     }
+    // what is loaded: for a page around the viewer
+    function info() {
+      if (!model) return null;
+      var tb = model.title, get = function (n) { var v = tb && one(tb, n); return v ? v[1] : ""; };
+      return { kind: model.kind, file: model.file, title: get("title"), rev: get("rev"), date: get("date"), company: get("company"),
+        layers: model.layers.slice(), on: Object.assign({}, on), flipped: !!model.flipped, box: model.box ? model.box.slice() : null,
+        parts: model.parts.filter(function (p) { return p.ref && !/^#/.test(p.ref); }).map(function (p) { return { ref: p.ref, value: p.val }; }) };
+    }
+    function setLayer(L, show) { if (L in on) { on[L] = !!show; buildLayers(); draw(); } }
     // when the box changes size (full screen, phone rotation, a resized window) the drawing keeps the same
     // point in its middle and grows or shrinks with the box, so a fitted board stays fitted
     var lastW = 0, lastH = 0;
@@ -775,9 +899,9 @@
       var w = cv.clientWidth, h = cv.clientHeight;
       if (!w || !h) return;
       if (model && lastW && lastH && (w !== lastW || h !== lastH)) {
-        var cx = (lastW / 2 - view.x) / view.s, cy = (lastH / 2 - view.y) / view.s;     // world point in the middle
+        var cx = (lastW / 2 - view.x) / (sgn() * view.s), cy = (lastH / 2 - view.y) / view.s;     // world point in the middle
         var f = Math.min(w / lastW, h / lastH);
-        view.s *= f; view.x = w / 2 - cx * view.s; view.y = h / 2 - cy * view.s;
+        view.s *= f; view.x = w / 2 - sgn() * cx * view.s; view.y = h / 2 - cy * view.s;
       }
       if (model && !lastW) { lastW = w; lastH = h; fit(); return; }
       lastW = w; lastH = h; draw();
@@ -786,7 +910,8 @@
     if (ro) ro.observe(box); else window.addEventListener("resize", resized);
     if (url) load(url);
     return {
-      load: load, fit: fit, element: box,
+      load: load, loadText: loadText, fit: fit, flip: flip, focus: focus, render: render, toBlob: toBlob, info: info, setLayer: setLayer,
+      zoom: function (f) { zoomAt(cv.clientWidth / 2, cv.clientHeight / 2, f); }, element: box, canvas: cv,
       destroy: function () { dead = true; if (ro) ro.disconnect(); box.remove(); }
     };
   }
@@ -804,5 +929,5 @@
     });
   }
 
-  window.WebCircuitViewer = { mount: mount, parse: parse, preloadFont: preloadFont, version: "1.1.0" };
+  window.WebCircuitViewer = { mount: mount, parse: parse, preloadFont: preloadFont, version: "1.2.0" };
 })();

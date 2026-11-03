@@ -26,6 +26,14 @@ const srv = http.createServer((q, s) => {
   await pg.evaluate(() => { const e = document.getElementById('pcb'); e._v.fit(); e.style.width = '600px'; e.style.height = '500px'; });
   await pg.waitForTimeout(500);
   await pg.locator('#pcb').screenshot({ path: `test/${proj}-pcb-resized.png` });
+  await pg.evaluate(() => { const e = document.getElementById('pcb'); e.style.width = '1200px'; e.style.height = '800px'; e._v.fit(); });
+  await pg.waitForTimeout(300);
+  await pg.locator('#pcb .wcv-bar button', { hasText: 'Flip' }).click(); await pg.waitForTimeout(400);
+  await pg.locator('#pcb').screenshot({ path: `test/${proj}-pcb-flipped.png` });
+  await pg.locator('#pcb').hover({ position: { x: 600, y: 400 } });
+  for (let i = 0; i < 5; i++) await pg.mouse.wheel(0, -200);
+  await pg.waitForTimeout(400);
+  await pg.locator('#pcb').screenshot({ path: `test/${proj}-pcb-flipped-zoom.png` });
   console.log('errors:', errs, 'font ready:', await pg.evaluate(() => !!window.WCV_FONT));
   await b.close(); srv.close();
 });

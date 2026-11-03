@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Web Circuit Viewer: a board corner with a trace and two pads, in the blog's red and cream -->
+  <rect x="6" y="6" width="52" height="52" rx="12" fill="#a93e33"/>
+  <rect x="11" y="11" width="42" height="42" rx="8" fill="none" stroke="#f8ecc6" stroke-width="2" opacity=".55"/>
+  <path d="M18 44 H28 L36 36 H46" fill="none" stroke="#f8ecc6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18 24 H26 L31 29 V36" fill="none" stroke="#f8ecc6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>
+  <circle cx="18" cy="24" r="5" fill="#f8ecc6"/><circle cx="18" cy="24" r="2" fill="#a93e33"/>
+  <circle cx="46" cy="36" r="5" fill="#f8ecc6"/><circle cx="46" cy="36" r="2" fill="#a93e33"/>
+  <circle cx="18" cy="44" r="3.2" fill="#f8ecc6"/>
+</svg>

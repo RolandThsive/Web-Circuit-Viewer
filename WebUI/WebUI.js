@@ -3,11 +3,11 @@
 (function () {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
-  var cfg = { examples: [], posterSizes: [{ name: "Blog poster", width: 1430, height: 1016 }], links: {} };
+  var cfg = { examples: [], posterSizes: [{ name: "Custom", custom: true, "default": true, width: 1430, height: 1016 }], links: {} };
   var viewer = null;                       // the WebCircuitViewer instance
   var open = { pcb: null, sch: null };     // the two files that can be open at once: { name, text, url }
   var shown = null;                        // "pcb" | "sch"
-  var poster = { size: 0, w: 1430, h: 1016, fmt: "image/webp", view: "fit", quality: 0.92 };
+  var poster = { size: 0, w: 1430, h: 1016, fmt: "image/webp", view: "fit", quality: 1 };
   var EXT = { "image/webp": ".webp", "image/png": ".png", "image/jpeg": ".jpg" };
 
   // ---- small helpers
@@ -32,7 +32,7 @@
     viewer = WebCircuitViewer.mount($("viewer"), "", {
       onLoad: function (info) {
         $("empty-note").hidden = true;
-        $("btn-shot").disabled = false; $("btn-poster").disabled = false; $("btn-preview").disabled = false;
+        $("btn-shot").disabled = false; $("btn-fit").disabled = false; $("btn-poster").disabled = false; $("btn-preview").disabled = false;
         $("part-search").disabled = !info.parts.length;
         $("frame").disabled = info.kind !== "sch";
         var badge = $("file-badge"); badge.hidden = false;
@@ -49,55 +49,56 @@
   }
 
   // ---- opening files
-  function take(name, text, url) {
+  // one board and one schematic can be open: a new file takes the place of the open one of its kind
+  function take(name, text, url, quiet) {
     var k = kindOf(name);
     if (!k) { toast(name + " is not a .kicad_pcb or .kicad_sch"); return; }
     open[k] = { name: name, text: text, url: url || "" };
-    drawFiles(); show(k);
+    if (!quiet) show(k);
   }
   function show(k) {
     if (!open[k]) return;
     shown = k;
     if ($("poster-name").dataset.auto !== "0") $("poster-name").value = "";    // a name typed by hand stays
     viewer.loadText(open[k].text, open[k].name);
-    [].forEach.call(document.querySelectorAll("#kind-switch button"), function (b) { b.disabled = !open[b.dataset.kind]; b.classList.toggle("on", b.dataset.kind === k); });
-    drawFiles();
-    $("btn-link").disabled = !(open.pcb && open.pcb.url) && !(open.sch && open.sch.url);
+    drawSwitch();
   }
-  function drop(k) {
-    open[k] = null;
-    if (shown === k) { shown = null; var other = k === "pcb" ? "sch" : "pcb"; if (open[other]) show(other); else reset(); }
-    drawFiles();
-  }
-  function reset() {
-    viewer.destroy(); $("viewer").innerHTML = ""; mountViewer();
-    $("empty-note").hidden = false; $("file-badge").hidden = true;
-    ["btn-shot", "btn-poster", "btn-preview"].forEach(function (id) { $(id).disabled = true; });
-    $("part-search").disabled = true; $("parts").innerHTML = ""; $("part-count").textContent = "";
-    [].forEach.call(document.querySelectorAll("#kind-switch button"), function (b) { b.disabled = true; b.classList.remove("on"); });
-  }
-  function drawFiles() {
-    var ul = $("files"); ul.innerHTML = "";
-    ["pcb", "sch"].forEach(function (k) {
-      var f = open[k]; if (!f) return;
-      var li = el("li", k === shown ? "on" : ""); li.appendChild(el("span", "kind " + k, label(k)));
-      li.appendChild(el("span", "name", f.name)); li.title = f.url || f.name;
-      var x = el("button", "close", "×"); x.type = "button"; x.title = "Close this file"; x.addEventListener("click", function (e) { e.stopPropagation(); drop(k); });
-      li.appendChild(x); li.addEventListener("click", function () { show(k); }); ul.appendChild(li);
+  // the Board / Schematic switch only works once both are open; until then it just shows which one this is
+  function drawSwitch() {
+    var both = !!(open.pcb && open.sch);
+    [].forEach.call(document.querySelectorAll("#kind-switch button"), function (b) {
+      b.disabled = !both; b.classList.toggle("on", b.dataset.kind === shown);
+      b.setAttribute("data-tip", both ? (b.dataset.kind === "pcb" ? "The board (.kicad_pcb)" : "The schematic (.kicad_sch)") : "Open both a board and a schematic to switch between them");
     });
-    if (!ul.children.length) ul.appendChild(el("li", "hint none", "Nothing yet."));
   }
+  // a pick or a drop is one set: at most one board and one schematic (the first of each kind is used)
   function readFiles(list) {
+    var pick = {}, extra = [];
     [].forEach.call(list, function (f) {
-      if (!kindOf(f.name)) { toast(f.name + " is not a KiCad board or schematic"); return; }
-      var rd = new FileReader(); rd.onload = function () { take(f.name, rd.result, ""); }; rd.readAsText(f);
+      var k = kindOf(f.name);
+      if (!k) toast(f.name + " is not a KiCad board or schematic");
+      else if (pick[k]) extra.push(f.name);
+      else pick[k] = f;
     });
+    if (extra.length) toast("One board and one schematic at a time: " + extra.join(", ") + " left out");
+    var kinds = ["pcb", "sch"].filter(function (k) { return pick[k]; });
+    var read = kinds.map(function (k) {
+      return new Promise(function (ok) { var rd = new FileReader(); rd.onload = function () { take(pick[k].name, rd.result, "", true); ok(); }; rd.onerror = function () { toast("Couldn't read " + pick[k].name); ok(); }; rd.readAsText(pick[k]); });
+    });
+    if (kinds.length) Promise.all(read).then(function () { show(open[kinds[0]] ? kinds[0] : kinds[kinds.length - 1]); });
   }
   function fetchFile(url) {
     var name = decodeURIComponent(url.split("/").pop().split("?")[0]);
     toast("Loading " + name + "…");
     return fetch(url).then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
-      .then(function (t) { take(name, t, url); }).catch(function () { toast("Couldn't load " + name); });
+      .then(function (t) { take(name, t, url, true); }).catch(function () { toast("Couldn't load " + name); });
+  }
+  // opens a board and/or schematic as one set, replacing what is open, and shows the board first
+  function fetchSet(pcb, sch) {
+    var jobs = [pcb && fetchFile(pcb), sch && fetchFile(sch)].filter(Boolean);
+    if (!jobs.length) return Promise.resolve();
+    open.pcb = open.sch = null;                       // a new set: nothing of the old one stays behind
+    return Promise.all(jobs).then(function () { if (open.pcb) show("pcb"); else if (open.sch) show("sch"); else drawSwitch(); });
   }
   $("file-input").addEventListener("change", function () { readFiles(this.files); this.value = ""; });
   var dz = $("drop");
@@ -131,6 +132,7 @@
   $("btn-fullscreen").addEventListener("click", function () {
     if (document.fullscreenElement) document.exitFullscreen(); else (wrap.requestFullscreen || wrap.webkitRequestFullscreen).call(wrap);
   });
+  $("btn-fit").addEventListener("click", function () { viewer.fit(); });
   $("btn-shot").addEventListener("click", function () {
     var c = viewer.render({ width: viewer.canvas.width, height: viewer.canvas.height, view: "current", frame: $("frame").checked });
     if (c) save(c, "image/png", 1, ($("poster-name").value || "circuit") + "_view");
@@ -144,14 +146,25 @@
       if (p.tip) b.setAttribute("data-tip", p.tip); else if (p.width) b.setAttribute("data-tip", p.width + " × " + p.height + " px");
       b.addEventListener("click", function () { poster.size = i; buildSizes(); sizeChanged(); }); seg.appendChild(b);
     });
-    var p = cfg.posterSizes[poster.size], custom = !p.width;
+    var p = cfg.posterSizes[poster.size], custom = isCustom(p);
     $("custom-size").hidden = !custom;
-    if (!custom) { poster.w = p.width; poster.h = p.height; $("size-w").value = p.width; $("size-h").value = p.height; }
+    if (!custom) { poster.w = p.width; poster.h = p.height; }       // the custom boxes keep their own numbers
+    else {                                             // the boxes start at the preset's own size (the blog poster)
+      if (!$("size-w").value) $("size-w").value = p.width || 1430;
+      if (!$("size-h").value) $("size-h").value = p.height || 1016;
+      readCustom(p);
+    }
     $("size-note").textContent = poster.w + " × " + poster.h + " px";
+  }
+  // a preset is the custom one when it says so, or (older webui.json) when it has no size of its own
+  function isCustom(p) { return !!(p.custom || !p.width); }
+  function readCustom(p) {
+    poster.w = Math.max(16, Math.min(8192, +$("size-w").value || p.width || 1430));
+    poster.h = Math.max(16, Math.min(8192, +$("size-h").value || p.height || 1016));
   }
   function sizeChanged() {
     var p = cfg.posterSizes[poster.size];
-    if (!p.width) { poster.w = Math.max(16, Math.min(8192, +$("size-w").value || 1430)); poster.h = Math.max(16, Math.min(8192, +$("size-h").value || 1016)); }
+    if (isCustom(p)) readCustom(p);
     $("size-note").textContent = poster.w + " × " + poster.h + " px";
   }
   ["size-w", "size-h"].forEach(function (id) { $(id).addEventListener("input", sizeChanged); });
@@ -197,25 +210,18 @@
     }, 30);
   });
 
-  // ---- links: ?pcb=<url>&sch=<url> opens files; Copy Link makes one
-  $("btn-link").addEventListener("click", function () {
-    var q = [];
-    if (open.pcb && open.pcb.url) q.push("pcb=" + encodeURIComponent(open.pcb.url));
-    if (open.sch && open.sch.url) q.push("sch=" + encodeURIComponent(open.sch.url));
-    var url = location.origin + location.pathname + (q.length ? "?" + q.join("&") : "");
-    (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(function () { toast("Link copied"); }, function () { prompt("Copy this link", url); });
-  });
-
   // ---- start
   mountViewer();
   WebCircuitViewer.preloadFont();
   fetch("webui.json", { cache: "no-cache" }).then(function (r) { return r.json(); }).then(function (c) { Object.assign(cfg, c); }).catch(function () {}).then(function () {
+    var d = -1; cfg.posterSizes.forEach(function (p, i) { if (p["default"] && d < 0) d = i; });
+    poster.size = d < 0 ? 0 : d;
     buildSizes();
     var ex = $("examples");
     cfg.examples.forEach(function (x) {
       var b = el("button", "glass-btn", x.name); b.type = "button";
       b.setAttribute("data-tip", "Opens " + [x.pcb && "the board", x.sch && "the schematic"].filter(Boolean).join(" and ") + " from the blog's site");
-      b.addEventListener("click", function () { Promise.all([x.pcb && fetchFile(x.pcb), x.sch && fetchFile(x.sch)].filter(Boolean)).then(function () { if (x.pcb) show("pcb"); }); });
+      b.addEventListener("click", function () { fetchSet(x.pcb, x.sch); });
       ex.appendChild(b);
     });
     if (!cfg.examples.length) ex.hidden = true;
@@ -225,10 +231,8 @@
     $("nav-back").href = home; $("nav-back").addEventListener("click", function (e) { if (history.length > 1 && document.referrer) { e.preventDefault(); history.back(); } });
     $("foot").innerHTML = 'Viewer: <a href="' + (L.repository || "#") + '" target="_blank" rel="noopener">Web-Circuit-Viewer</a> ' + (window.WebCircuitViewer.version || "") +
       ' · GPL-3.0-or-later · KiCad’s newstroke font · runs in your browser, nothing is uploaded';
-    var q = new URLSearchParams(location.search), jobs = [];
-    if (q.get("sch")) jobs.push(fetchFile(q.get("sch")));
-    if (q.get("pcb")) jobs.push(fetchFile(q.get("pcb")));
-    if (q.get("file")) jobs.push(fetchFile(q.get("file")));
-    Promise.all(jobs).then(function () { if (q.get("pcb") && open.pcb) show("pcb"); });
+    // a link can open files: ?pcb=<url>&sch=<url> (or ?file=<url> for either one)
+    var q = new URLSearchParams(location.search), f = q.get("file") || "";
+    fetchSet(q.get("pcb") || (kindOf(f) === "pcb" ? f : ""), q.get("sch") || (kindOf(f) === "sch" ? f : ""));
   });
 })();

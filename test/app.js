@@ -10,7 +10,7 @@ const srv = http.createServer((q, s) => { const p = path.join(root, decodeURICom
   await pg.screenshot({ path: 'test/app-empty.png' });
   await pg.locator('#examples button').first().click(); await pg.waitForTimeout(2500);
   await pg.screenshot({ path: 'test/app-pcb.png' });
-  const st1 = await pg.evaluate(() => ({ badge: document.getElementById('file-badge').textContent, files: [...document.querySelectorAll('#files li')].map(l => l.textContent.trim()), parts: document.getElementById('part-count').textContent, posterName: document.getElementById('poster-name').value }));
+  const st1 = await pg.evaluate(() => ({ badge: document.getElementById('file-badge').textContent, kinds: [...document.querySelectorAll('#kind-switch button')].map(b => b.textContent + (b.disabled ? ' (off)' : '') + (b.classList.contains('on') ? ' [on]' : '')), parts: document.getElementById('part-count').textContent, posterName: document.getElementById('poster-name').value }));
   console.log(JSON.stringify(st1));
   // search a part and jump to it
   await pg.fill('#part-search', 'U2'); await pg.waitForTimeout(200); await pg.locator('#parts li').first().click(); await pg.waitForTimeout(400);

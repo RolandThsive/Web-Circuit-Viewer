@@ -6,13 +6,12 @@
     { "name": "Thermometer main board", "pcb": "https://RolandThsive.github.io/Assets/PCB_Assets/TheMainBoard - Thermometer/TheMainBoard.kicad_pcb", "sch": "https://RolandThsive.github.io/Assets/PCB_Assets/TheMainBoard - Thermometer/TheMainBoard.kicad_sch" },
     { "name": "VOC meter main board", "pcb": "https://RolandThsive.github.io/Assets/PCB_Assets/TheMainBoard - VOC/TheMainBoard.kicad_pcb", "sch": "https://RolandThsive.github.io/Assets/PCB_Assets/TheMainBoard - VOC/TheMainBoard.kicad_sch" }
   ],
-  "_posterSizes": "The size presets of the poster maker (pixels). The first one is the default.",
+  "_posterSizes": "The size presets of the poster maker (pixels). The one with \"default\": true is selected first (else the first one). The one with \"custom\": true has W and H boxes, filled with its width and height.",
   "posterSizes": [
-    { "name": "Blog poster", "width": 1430, "height": 1016, "tip": "The size of the posters on the blog (A4 landscape)" },
-    { "name": "Large", "width": 2860, "height": 2032, "tip": "Twice the blog poster, for print or sharp zooms" },
+    { "name": "Large", "width": 2860, "height": 2032, "tip": "2860 × 2032 px, for print or sharp zooms" },
     { "name": "Square", "width": 1600, "height": 1600 },
     { "name": "Wide", "width": 1920, "height": 1080 },
-    { "name": "Custom", "width": 0, "height": 0 }
+    { "name": "Custom", "custom": true, "default": true, "width": 1430, "height": 1016, "tip": "Your own size; starts at the blog poster size, 1430 × 1016 px (A4 landscape)" }
   ],
   "links": {
     "repository": "https://github.com/RolandThsive/Web-Circuit-Viewer",

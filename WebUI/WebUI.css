@@ -1,7 +1,7 @@
 /* WebUI.css - the stylesheet of the Web Circuit Viewer page (index.html).
    The same look as the blog's other tools (KiCad EM Stackup Exporter, Coil Generator): their tokens, glass buttons,
    segmented controls, silver switches and panels, so the three feel like one family.
-   Order: tokens, base, page frame, buttons, segmented control, switch, left panel (files, parts), preview, poster
+   Order: tokens, base, page frame, buttons, segmented control, switch, left panel (opening, parts), preview, poster
    panel, pop-ups, responsive rules last (they override what is above). */
 
 /* ---- tokens ------------------------------------------------------------ */
@@ -50,8 +50,6 @@ html.embedded #topbar { padding-right: 112px; }     /* room for the blog page's 
 #topbar h1 { font-size: 26px; white-space: nowrap; position: relative; top: -0.08em; display: flex; align-items: center; gap: 10px; }
 #topbar h1 .logo { width: 36px; height: 36px; flex: none; position: relative; top: 0.08em; }
 .top-mid { flex: 1; min-width: 0; display: flex; justify-content: center; }
-.top-actions { display: flex; gap: 8px; }
-.top-actions .glass-btn { white-space: nowrap; }
 .standalone-nav { display: flex; gap: 8px; }
 html.embedded .standalone-nav { display: none; }
 #foot { font-size: 11.5px; color: var(--text-3); text-align: center; }
@@ -122,9 +120,10 @@ html.embedded .standalone-nav { display: none; }
 .switch input:disabled + .knob { opacity: 0.45; }
 .switch-row { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13.5px; }
 
-/* ---- the left panel: files and parts ------------------------------------- */
+/* ---- the left panel: opening files and parts ------------------------------------- */
 #controls { display: flex; flex-direction: column; padding: 14px 14px 10px; overflow: hidden; }
-#controls-scroll { flex: 1; overflow-y: auto; min-height: 0; margin-right: -9px; padding-right: 13px; }
+#controls-scroll { flex: 1; overflow-y: auto; min-height: 0; margin-right: -9px; padding-right: 13px; display: flex; flex-direction: column; }
+#controls-scroll > * { flex: none; }
 #controls-scroll::-webkit-scrollbar, #side::-webkit-scrollbar, .parts::-webkit-scrollbar { width: 12px; }
 #controls-scroll::-webkit-scrollbar-track, #side::-webkit-scrollbar-track, .parts::-webkit-scrollbar-track {
   border-radius: 6px; background: rgba(0, 0, 0, 0.06); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06), inset 1px 0 2px rgba(0, 0, 0, 0.12); }
@@ -133,6 +132,7 @@ html.embedded .standalone-nav { display: none; }
   background: linear-gradient(90deg, #8e8e8e 0%, #c9c9c9 18%, #f7f7f7 38%, #ffffff 46%, #d9d9d9 62%, #a8a8a8 84%, #8a8a8a 100%); }
 @supports not selector(::-webkit-scrollbar) { #controls-scroll, #side, .parts { scrollbar-color: #b4b4b4 rgba(0, 0, 0, 0.06); } }
 #controls-scroll > h2 { margin-bottom: 14px; text-align: center; }
+h2[data-tip] { cursor: help; }
 #controls-scroll > h2.sub { margin: 22px 0 10px; font-size: 19px; }
 .drop { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 2px dashed rgba(169, 62, 51, 0.35); border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.5); cursor: pointer; transition: all var(--ease); }
@@ -145,19 +145,10 @@ html.embedded .standalone-nav { display: none; }
 .examples .hint { flex-basis: 100%; text-align: center; }
 .examples .glass-btn { padding: 3px 10px; font-size: 12px; }
 .privacy { text-align: center; margin: 10px 0 0; font-size: 11.5px; color: var(--text-3); }
-.files, .parts { list-style: none; margin: 0; padding: 0; }
-.files li { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; transition: background var(--ease); }
-.files li:hover { background: var(--cream); }
-.files li.on { background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
-.files li.none, .files li.none:hover { cursor: default; background: none; padding: 4px 8px; }
-.files .kind { flex: none; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; padding: 2px 6px; border-radius: 6px; color: #fff; background: var(--accent); }
-.files .kind.sch { background: #2E7D32; }
-.files .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
-.files .close { border: 0; background: none; color: var(--text-3); font-size: 16px; cursor: pointer; padding: 0 4px; line-height: 1; }
-.files .close:hover { color: var(--accent); }
+.parts { list-style: none; margin: 0; padding: 0; }
 .search-row { display: flex; align-items: center; gap: 8px; }
 .search-row .text-input { flex: 1; }
-.parts { max-height: 32vh; overflow-y: auto; margin-top: 6px; }
+#controls-scroll > .parts { flex: 1 1 0; min-height: 140px; overflow-y: auto; margin-top: 6px; }   /* the list takes the rest of the panel */
 .parts li { display: flex; gap: 8px; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; transition: background var(--ease); }
 .parts li:hover { background: var(--cream); color: var(--accent); }
 .parts li b { font-weight: 600; min-width: 42px; }
@@ -174,9 +165,14 @@ html.embedded .standalone-nav { display: none; }
 .canvas-wrap:fullscreen #viewer .wcv { border-radius: 0; }
 .view-top { position: absolute; left: 10px; top: 10px; z-index: 5; display: flex; gap: 10px; align-items: flex-start; }
 .canvas-tools { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-.tool-pair { display: flex; gap: 6px; }
+.tool-pair { display: flex; gap: 6px; align-items: center; }
+.canvas-tools .fit-btn { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; white-space: nowrap; box-sizing: border-box; }
+#viewer .wcv-bar button[data-act="fit"] { display: none; }   /* the page has its own Fit, next to full screen */
+.top-actions { display: flex; gap: 8px; }
+.top-actions .glass-btn { white-space: nowrap; }
 .fs-btn { border: 0; border-radius: 6px; cursor: pointer; background: rgba(0, 0, 0, 0.65); color: #fff; font-size: 14px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif; }
-.fs-btn:hover { background: rgba(0, 0, 0, 0.85); }
+.fs-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.85); }
+.fs-btn:disabled { opacity: 0.45; cursor: default; }
 .canvas-tools .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 32px; padding: 0; }
 .canvas-tools .icon-btn svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .canvas-tools .icon-btn:hover:not(:disabled) { color: var(--accent); }
@@ -232,7 +228,7 @@ input[type=range]:focus { outline: none; }
   #workspace { grid-template-columns: 1fr 1fr; grid-template-rows: 62vh auto; grid-template-areas: "preview preview" "controls side"; }
   #controls { max-height: 90vh; }
   #topbar h1 { font-size: 16px; }
-  .parts { max-height: 40vh; }
+  #controls-scroll > .parts { flex: none; max-height: 40vh; }
 }
 @media (max-width: 640px) {
   #app { padding: 0 8px 6px; }

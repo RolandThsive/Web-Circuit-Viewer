@@ -14,11 +14,11 @@ What it does
   A **Layers** button switches layers on and off (Front / Back / All shortcuts).
 - Schematics: symbols, pins with names and numbers, wires, buses, junctions, no-connects, labels, notes,
   the page frame and the title block.
-- Zoom (wheel, buttons, pinch, double-click), pan (drag), **Fit**, **Flip** (the board seen from the back: mirrored,
+- Zoom (wheel, − / + top right, pinch, double-click), pan (drag), **Fit**, **Flip** (the board seen from the back: mirrored,
   the back copper and silkscreen on top, back-side text readable).
 - Hover a part (tap on a phone) to see its reference and value, for example `U2 · DRV8833PWP`.
-- Posters: `render()` draws the circuit into a picture of any size (the page's Poster panel: blog poster, large, square,
-  wide or custom; WebP / PNG / JPEG; everything or the current view; see-through background with the board's shape kept
+- Posters: `render()` draws the circuit into a picture of any size (the page's Poster panel: large, square,
+  wide or custom, which starts at the blog poster's 1430 × 1016; WebP / PNG / JPEG; everything or the current view; see-through background with the board's shape kept
   and the holes punched through).
 - Text is drawn with KiCad's own stroke font (newstroke), so boards and schematics look as they do in KiCad.
   Until the font file has arrived (or if it cannot be fetched) a plain font stands in.

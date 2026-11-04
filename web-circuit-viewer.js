@@ -244,7 +244,7 @@
       return out;
     }
     function sweep(A) { var d = A.a1 - A.a0; if (A.ccw) { while (d > 0) d -= 2 * Math.PI; } else { while (d < 0) d += 2 * Math.PI; } return d; }
-    var loops = [], pieces = [];
+    var loops = [], pieces = [], openChains = 0;
     edge.forEach(function (it) {
       if (it.k === "circle") { var c = []; for (var i = 0; i < 72; i++) c.push([it.x + it.r * Math.cos(i * Math.PI / 36), it.y + it.r * Math.sin(i * Math.PI / 36)]); loops.push(c); }
       else if (it.k === "poly") loops.push(it.p.slice());
@@ -263,7 +263,17 @@
           if (near(pc[pc.length - 1], end)) { chain = chain.concat(pc.slice(0, -1).reverse()); pieces.splice(i, 1); grew = true; break; }
         }
       }
-      if (chain.length > 2 && near(chain[0], chain[chain.length - 1])) loops.push(chain);
+      if (chain.length > 2 && near(chain[0], chain[chain.length - 1])) loops.push(chain); else openChains++;
+    }
+    // fit to the real board shape: boxOf() counts an arc as its whole circle, which on boards whose edge is
+    // made of partial arcs gives a box far bigger than the board, off to one side. The loops above follow the
+    // arcs' true path, so when every edge piece closed into a loop, their points give the exact extent.
+    if (loops.length && !openChains) {
+      var ob = [Infinity, Infinity, -Infinity, -Infinity];
+      loops.forEach(function (lp) { lp.forEach(function (q) {
+        if (q[0] < ob[0]) ob[0] = q[0]; if (q[1] < ob[1]) ob[1] = q[1]; if (q[0] > ob[2]) ob[2] = q[0]; if (q[1] > ob[3]) ob[3] = q[1];
+      }); });
+      bb = ob;
     }
     var order = Object.keys(layersUsed).sort(function (a, b) { return layerSort(a) - layerSort(b); });
     return { kind: "pcb", items: items, itemsBack: itemsBack, parts: parts, box: bb, layers: order, paper: paperOf(root), title: one(root, "title_block"), outline: loops };
@@ -646,13 +656,15 @@
   /* ================================================================== the viewer */
   var CSS = ".wcv{position:relative;width:100%;height:100%;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;font:13px/1.3 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif}" +
     ".wcv canvas{display:block;width:100%;height:100%;cursor:grab}.wcv canvas.drag{cursor:grabbing}" +
-    ".wcv-bar{position:absolute;right:10px;bottom:10px;display:flex;gap:6px;z-index:2}" +
-    ".wcv-bar button,.wcv-lay button{font:inherit;font-size:13px;border:1px solid rgba(0,0,0,.15);background:rgba(255,255,255,.92);color:#333;border-radius:8px;min-width:34px;height:32px;padding:0 9px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.2)}" +
-    ".wcv-bar button:hover{background:#fff}.wcv-bar button.on{background:#333;color:#fff;border-color:#333}" +
+    ".wcv-bar{position:absolute;right:10px;bottom:10px;display:flex;gap:6px;z-index:2}.wcv .wcv-zoom{top:10px;bottom:auto}" +
+    ".wcv .wcv-bar button,.wcv .wcv-lay button{font:inherit;font-size:13px;border:1px solid rgba(0,0,0,.15);background:rgba(255,255,255,.92);color:#333;border-radius:8px;min-width:34px;height:32px;padding:0 9px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.2);" +
+    // a page's own button styles (blog themes) must not reach in here: fixed size, one line, no extras
+    "margin:0;width:auto;max-width:none;line-height:1;letter-spacing:normal;text-transform:none;text-indent:0;white-space:nowrap;box-sizing:border-box;vertical-align:middle;-webkit-appearance:none;appearance:none}" +
+    ".wcv .wcv-bar button:hover{background:#fff}.wcv .wcv-bar button.on{background:#333;color:#fff;border-color:#333}" +
     ".wcv-lay{position:absolute;right:10px;bottom:50px;z-index:2;background:rgba(255,255,255,.95);border-radius:10px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,.3);max-height:calc(100% - 70px);overflow:auto;display:none;min-width:150px}" +
     ".wcv-lay.open{display:block}.wcv-lay label{display:flex;align-items:center;gap:7px;padding:3px 4px;cursor:pointer;color:#333;white-space:nowrap}" +
     ".wcv-lay i{width:14px;height:14px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.25)}" +
-    ".wcv-lay .wcv-row{display:flex;gap:6px;margin-top:6px}.wcv-lay .wcv-row button{height:26px;font-size:12px;flex:1}" +
+    ".wcv-lay .wcv-row{display:flex;gap:6px;margin-top:6px}.wcv .wcv-lay .wcv-row button{height:26px;font-size:12px;flex:1 0 auto;padding:0 8px}" +
     ".wcv-tip{position:absolute;z-index:3;pointer-events:none;background:rgba(20,20,20,.88);color:#fff;padding:4px 9px;border-radius:7px;font-size:12.5px;white-space:nowrap;display:none}" +
     ".wcv-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#888;font-size:14px;text-align:center;padding:20px;pointer-events:none}";
   function addCss() { if (document.getElementById("wcv-css")) return; var s = document.createElement("style"); s.id = "wcv-css"; s.textContent = CSS; document.head.appendChild(s); }
@@ -663,20 +675,21 @@
     var box = document.createElement("div"); box.className = "wcv";
     var cv = document.createElement("canvas"), ctx = cv.getContext("2d");
     var bar = document.createElement("div"); bar.className = "wcv-bar";
+    var zoomBar = document.createElement("div"); zoomBar.className = "wcv-bar wcv-zoom";      // − and + sit top right
     var tip = document.createElement("div"); tip.className = "wcv-tip";
     var msg = document.createElement("div"); msg.className = "wcv-msg"; msg.textContent = "Loading…";
     var lay = document.createElement("div"); lay.className = "wcv-lay";
-    box.appendChild(cv); box.appendChild(bar); box.appendChild(lay); box.appendChild(tip); box.appendChild(msg);
+    box.appendChild(cv); box.appendChild(bar); box.appendChild(zoomBar); box.appendChild(lay); box.appendChild(tip); box.appendChild(msg);
     host.appendChild(box);
     var model = null, frame = [], view = { s: 1, x: 0, y: 0 }, on = {}, hover = null, raf = 0, dead = false;
     var pendingKind = null;        // "pcb" | "sch" from the file name, so the right background shows while it loads
 
-    function btn(label, title, fn) { var b = document.createElement("button"); b.type = "button"; b.textContent = label; b.title = title; b.setAttribute("aria-label", title); b.addEventListener("click", fn); bar.appendChild(b); return b; }
+    function btn(label, title, fn, where) { var b = document.createElement("button"); b.type = "button"; b.textContent = label; b.title = title; b.setAttribute("aria-label", title); b.addEventListener("click", fn); (where || bar).appendChild(b); return b; }
+    btn("−", "Zoom out", function () { zoomAt(cv.clientWidth / 2, cv.clientHeight / 2, 1 / 1.4); }, zoomBar);
+    btn("+", "Zoom in", function () { zoomAt(cv.clientWidth / 2, cv.clientHeight / 2, 1.4); }, zoomBar);
     var layBtn = btn("Layers", "Show or hide layers", function () { lay.classList.toggle("open"); });
     var flipBtn = btn("Flip", "Look at the board from the other side", function () { flip(); });
-    btn("−", "Zoom out", function () { zoomAt(cv.clientWidth / 2, cv.clientHeight / 2, 1 / 1.4); });
-    btn("+", "Zoom in", function () { zoomAt(cv.clientWidth / 2, cv.clientHeight / 2, 1.4); });
-    btn("Fit", "Show everything", function () { fit(); });
+    btn("Fit", "Show everything", function () { fit(); }).dataset.act = "fit";
 
     function size() {
       var r = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
@@ -845,7 +858,7 @@
     // ---- the layer list (boards only)
     function buildLayers() {
       lay.innerHTML = "";
-      if (!model || model.kind !== "pcb") { layBtn.style.display = "none"; flipBtn.style.display = "none"; return; }
+      if (!model || model.kind !== "pcb") { lay.classList.remove("open"); layBtn.style.display = "none"; flipBtn.style.display = "none"; return; }   // a schematic has no layers: close the box too
       layBtn.style.display = ""; flipBtn.style.display = ""; flipBtn.classList.remove("on"); flipBtn.textContent = "Flip";
       model.layers.forEach(function (L) {
         var lab = document.createElement("label"), cb = document.createElement("input"), sw = document.createElement("i");
@@ -858,7 +871,7 @@
       var row = document.createElement("div"); row.className = "wcv-row";
       [["Front", /^F\.|Edge|Vias/], ["Back", /^B\.|Edge|Vias/], ["All", /./]].forEach(function (x) {
         var b = document.createElement("button"); b.type = "button"; b.textContent = x[0];
-        b.addEventListener("click", function () { model.layers.forEach(function (L) { on[L] = x[1].test(L) && (x[0] !== "All" || PCB_DEFAULT_ON.test(L) || L === "Vias"); }); buildLayers(); lay.classList.add("open"); draw(); });
+        b.addEventListener("click", function () { model.layers.forEach(function (L) { on[L] = x[1].test(L); }); buildLayers(); lay.classList.add("open"); draw(); if (opts.onLayers) opts.onLayers(Object.assign({}, on)); });
         row.appendChild(b);
       });
       lay.appendChild(row);
@@ -932,7 +945,7 @@
   if (window.customElements && !customElements.get("web-circuit-viewer")) {
     customElements.define("web-circuit-viewer", class extends HTMLElement {
       static get observedAttributes() { return ["src"]; }
-      connectedCallback() { if (!this._v) { this._v = mount(this, this.getAttribute("src") || ""); } }
+      connectedCallback() { if (!this._v) { this._v = mount(this, this.getAttribute("src") || "", {}); } }
       attributeChangedCallback(n, o, v) { if (this._v && o !== v && v) this._v.load(v); }
       disconnectedCallback() { if (this._v) { this._v.destroy(); this._v = null; } }
     });
